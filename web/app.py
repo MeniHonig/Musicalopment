@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import gc
 import os
-import subprocess
 import sys
 import threading
 import uuid
@@ -189,9 +188,6 @@ def _do_render(job_id, job, tap_time, meter, show_bars):
             beats_per_measure=meter,
             progress_callback=on_progress,
         )
-
-        on_progress(95)
-        _mux_audio(input_path, final_path)
         gc.collect()
 
         total_bars = int(np.sum(positions == 1))
@@ -231,22 +227,6 @@ def serve_uploaded(filename):
 def serve_video(filename):
     return send_from_directory(str(OUTPUT_DIR), filename)
 
-
-def _mux_audio(original: Path, overlay: Path) -> None:
-    tmp = overlay.with_suffix(".tmp" + overlay.suffix)
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(overlay), "-i", str(original),
-        "-c:v", "copy", "-c:a", "aac",
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-shortest", str(tmp),
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode == 0:
-        overlay.unlink()
-        tmp.rename(overlay)
-    elif tmp.exists():
-        tmp.unlink()
 
 
 if __name__ == "__main__":

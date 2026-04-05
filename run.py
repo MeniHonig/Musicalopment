@@ -131,10 +131,6 @@ def process_video(
     timings["video_render"] = time.time() - t0
     print(f"      Done ({timings['video_render']:.1f}s)")
 
-    # Step 4 — mux original audio back in
-    print("[+]  Muxing original audio …")
-    _mux_audio(video_path, output_path)
-
     # Cleanup temp WAV
     try:
         os.unlink(wav_path)
@@ -242,27 +238,6 @@ def _find_input_video(cfg: dict, explicit: str | None) -> Path:
         "Place a video there or pass one as an argument."
     )
 
-
-def _mux_audio(original_video: Path, overlay_video: Path) -> None:
-    """Replace overlay_video in-place with a version that has audio from original_video."""
-    final_tmp = overlay_video.with_suffix(".final" + overlay_video.suffix)
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", str(overlay_video),
-        "-i", str(original_video),
-        "-c:v", "copy", "-c:a", "aac",
-        "-map", "0:v:0", "-map", "1:a:0",
-        "-shortest",
-        str(final_tmp),
-    ]
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    if res.returncode == 0:
-        overlay_video.unlink()
-        final_tmp.rename(overlay_video)
-    else:
-        print(f"  ⚠ Audio mux failed (output will be silent): {res.stderr[:200]}")
-        if final_tmp.exists():
-            final_tmp.unlink()
 
 
 def main() -> None:
