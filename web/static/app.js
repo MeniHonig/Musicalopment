@@ -119,6 +119,14 @@
       }, 400);
     });
 
+    xhr.timeout = 300000; // 5 min max
+    xhr.addEventListener("timeout", () => {
+      serverResponded = true;
+      hide($progress);
+      hide($processingMsg);
+      alert("Processing took too long. Try a shorter video (under 1 minute).");
+    });
+
     xhr.open("POST", "/api/upload");
     xhr.send(formData);
   }
@@ -131,7 +139,7 @@
     $statBeats.textContent = data.total_beats;
     $statDur.textContent = data.duration + "s";
 
-    $video.src = data.step1_video;
+    $video.src = data.original_video;
     $video.load();
 
     showSection($tap);

@@ -1,15 +1,13 @@
 """
-Musicalopment – Flask Web Backend (simplified)
-===============================================
-Step 1: Upload → detect BPM + beat positions → render continuous-count video
-Step 2: User picks meter (3/4, 4/4, 5/4) + taps the "ONE" →
-        pure math to assign measure positions → re-render with 1-2-3-4
+Musicalopment – Flask Web Backend (simplified & optimized)
+==========================================================
+Step 1: Upload → detect BPM + beat positions (audio only, fast)
+Step 2: User picks meter + taps ONE → render overlay video
 """
 
 from __future__ import annotations
 
 import gc
-import json
 import os
 import subprocess
 import sys
@@ -51,10 +49,6 @@ def _load_config() -> dict:
         return yaml.safe_load(f)
 
 
-# ------------------------------------------------------------------
-#  Routes
-# ------------------------------------------------------------------
-
 @app.route("/")
 def index():
     return render_template("index.html")
@@ -63,8 +57,9 @@ def index():
 @app.route("/api/upload", methods=["POST"])
 def upload_and_process():
     """
-    Step 1: Upload video → detect beats + BPM → render video with
-    continuous counting only.  Returns beat_times so step 2 is pure math.
+    Step 1: Upload → extract audio → detect beats + BPM.
+    NO video rendering here — just audio analysis (fast).
+    The original video is served back for the user to watch.
     """
     if "video" not in request.files:
         return jsonify(error="No video file in request"), 400
@@ -80,8 +75,6 @@ def upload_and_process():
 
     cfg = _load_config()
     bd = cfg["beat_detection"]
-    ov = cfg["overlay"]
-    codec = cfg["output_video"].get("codec", "mp4v")
 
     try:
         wav_path = extract_audio(input_path, sample_rate=bd["audio_sample_rate"])
@@ -93,19 +86,8 @@ def upload_and_process():
             calibration_seconds=bd["calibration_seconds"],
             bpm_min=bd["bpm_min"],
             bpm_max=bd["bpm_max"],
-            time_signature="4",  # doesn't matter, we only use beat_times + bpm
+            time_signature="4",
         )
-
-        # Render step-1 video: continuous count + BPM only
-        step1_name = f"{job_id}_step1.mp4"
-        step1_path = OUTPUT_DIR / step1_name
-        ov_step1 = {**ov, "show_measure_count": False, "show_continuous_count": True}
-
-        render_video_with_beats(
-            input_path, step1_path, info.beat_times, info.bpm,
-            ov_step1, codec,
-        )
-        _mux_audio(input_path, step1_path)
 
         try:
             os.unlink(wav_path)
@@ -115,10 +97,10 @@ def upload_and_process():
 
         _jobs[job_id] = {
             "input_path": str(input_path),
+            "input_name": f"{job_id}{ext}",
             "beat_times": [float(t) for t in info.beat_times],
             "bpm": float(info.bpm),
             "duration": float(info.duration),
-            "step1_video": step1_name,
         }
 
         return jsonify(
@@ -127,7 +109,7 @@ def upload_and_process():
             total_beats=len(info.beat_times),
             duration=round(float(info.duration), 1),
             beat_times=[float(t) for t in info.beat_times],
-            step1_video=f"/api/video/{step1_name}",
+            original_video=f"/api/uploaded/{job_id}{ext}",
         )
 
     except Exception as e:
@@ -137,9 +119,8 @@ def upload_and_process():
 @app.route("/api/rerender", methods=["POST"])
 def rerender():
     """
-    Step 2: User chose meter + tapped the "ONE".
-    Pure math: snap tap to nearest beat, assign 1-2-3-4 cyclically,
-    then re-render the video overlay.
+    Step 2: User chose meter + tapped the ONE.
+    Snap tap to nearest beat → assign 1-2-3-4 → render overlay.
     """
     data = request.get_json()
     if not data:
@@ -165,16 +146,13 @@ def rerender():
     ov = cfg["overlay"]
     codec = cfg["output_video"].get("codec", "mp4v")
 
-    # Snap tap to nearest beat
     anchor_idx = int(np.argmin(np.abs(beat_times - float(tap_time))))
 
-    # Pure math: assign 1-based positions cyclically from the anchor
     n = len(beat_times)
     positions = np.zeros(n, dtype=int)
     for i in range(n):
         positions[i] = ((i - anchor_idx) % meter) + 1
 
-    # Render final video
     final_name = f"{job_id}_final.mp4"
     final_path = OUTPUT_DIR / final_name
 
@@ -189,7 +167,6 @@ def rerender():
         input_path, final_path, beat_times, bpm, ov_final, codec,
         measure_positions=positions,
         beats_per_measure=meter,
-        bar_start_idx=anchor_idx if show_bars else None,
     )
     _mux_audio(input_path, final_path)
     gc.collect()
@@ -204,6 +181,12 @@ def rerender():
         show_bars=show_bars,
         final_video=f"/api/video/{final_name}",
     )
+
+
+@app.route("/api/uploaded/<filename>")
+def serve_uploaded(filename):
+    """Serve the original uploaded video for playback in step 2."""
+    return send_from_directory(str(UPLOAD_DIR), filename)
 
 
 @app.route("/api/video/<filename>")
