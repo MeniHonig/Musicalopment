@@ -121,21 +121,6 @@ def upload_and_process():
             beats_per_measure=info.beats_per_measure,
         )
 
-        # Compute beat_strengths for tap-based meter detection in step 2
-        import librosa
-        y_full, _ = librosa.load(str(wav_path), sr=bd["audio_sample_rate"])
-        onset_env = librosa.onset.onset_strength(
-            y=y_full, sr=bd["audio_sample_rate"], hop_length=bd["hop_length"]
-        )
-        _, beat_frames = librosa.beat.beat_track(
-            onset_envelope=onset_env,
-            sr=bd["audio_sample_rate"],
-            hop_length=bd["hop_length"],
-            start_bpm=info.bpm,
-            units="frames",
-        )
-        beat_strengths = onset_env[beat_frames[beat_frames < len(onset_env)]]
-
         # Mux audio back into step-1 video
         _mux_audio(input_path, step1_path)
 
@@ -148,7 +133,7 @@ def upload_and_process():
         _jobs[job_id] = {
             "input_path": str(input_path),
             "beat_times": [float(t) for t in info.beat_times],
-            "beat_strengths": [float(s) for s in beat_strengths],
+            "beat_strengths": [float(s) for s in info.beat_strengths],
             "bpm": float(info.bpm),
             "duration": float(info.duration),
             "auto_meter": int(info.beats_per_measure),

@@ -83,32 +83,36 @@
       }
     });
 
-    xhr.addEventListener("load", () => {
-      if (xhr.status >= 200 && xhr.status < 300) {
-        hide($progress);
-        show($processingMsg);
+    let serverResponded = false;
 
-        // Response is already back — processing happened server-side during upload
+    xhr.addEventListener("load", () => {
+      serverResponded = true;
+      hide($progress);
+      hide($processingMsg);
+
+      if (xhr.status >= 200 && xhr.status < 300) {
         const data = JSON.parse(xhr.responseText);
         handleStep1Result(data);
       } else {
         let msg = "Upload failed";
         try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
         alert(msg);
-        hide($progress);
       }
     });
 
     xhr.addEventListener("error", () => {
-      alert("Network error — check your connection.");
+      serverResponded = true;
       hide($progress);
+      hide($processingMsg);
+      alert("Network error — check your connection.");
     });
 
-    // Show processing indicator right after upload completes
     xhr.upload.addEventListener("load", () => {
+      if (serverResponded) return;
       $progressFill.style.width = "100%";
       $progressText.textContent = "Processing…";
       setTimeout(() => {
+        if (serverResponded) return;
         hide($progress);
         show($processingMsg);
       }, 400);

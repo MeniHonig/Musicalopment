@@ -19,6 +19,7 @@ class BeatInfo:
     downbeat_indices: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
     measure_positions: np.ndarray = field(default_factory=lambda: np.array([], dtype=int))
     meter_confidence: float = 0.0
+    beat_strengths: np.ndarray = field(default_factory=lambda: np.array([], dtype=float))
 
 
 def detect_beats(
@@ -44,6 +45,7 @@ def detect_beats(
         If "auto", the detector picks the best meter.
         Otherwise forces the given beats-per-measure.
     """
+    import gc
     audio_path = Path(audio_path)
 
     # --- Phase 1: calibration window ---
@@ -56,12 +58,16 @@ def detect_beats(
     )
     cal_bpm = float(np.atleast_1d(cal_tempo)[0])
     cal_bpm = np.clip(cal_bpm, bpm_min, bpm_max)
+    del y_cal, onset_env_cal
+    gc.collect()
 
     # --- Phase 2: full track with calibrated prior ---
     y_full, _ = librosa.load(audio_path, sr=sr)
     duration = float(len(y_full)) / sr
 
     onset_env = librosa.onset.onset_strength(y=y_full, sr=sr, hop_length=hop_length)
+    del y_full
+    gc.collect()
     full_tempo, beat_frames = librosa.beat.beat_track(
         onset_envelope=onset_env,
         sr=sr,
@@ -89,6 +95,9 @@ def detect_beats(
         beat_strengths, best_meter
     )
 
+    del onset_env
+    gc.collect()
+
     return BeatInfo(
         bpm=final_bpm,
         beat_times=beat_times,
@@ -97,6 +106,7 @@ def detect_beats(
         downbeat_indices=downbeat_indices,
         measure_positions=measure_positions,
         meter_confidence=confidence,
+        beat_strengths=beat_strengths,
     )
 
 
