@@ -46,6 +46,7 @@ def render_video_with_beats(
     codec: str = "mp4v",
     measure_positions: np.ndarray | None = None,
     beats_per_measure: int = 4,
+    bar_start_idx: int | None = None,
 ) -> Path:
     """
     Read *video_path* frame-by-frame, overlay beat counter + BPM,
@@ -84,13 +85,15 @@ def render_video_with_beats(
     downbeat_color = tuple(cfg_overlay.get("downbeat_color", [0, 0, 255]))
     show_continuous = cfg_overlay.get("show_continuous_count", True)
     show_measure = cfg_overlay.get("show_measure_count", True)
+    show_bar_number = cfg_overlay.get("show_bar_number", False)
+    bar_pos = (cfg_overlay.get("bar_x", 30), cfg_overlay.get("bar_y", 260))
 
     has_measures = measure_positions is not None and len(measure_positions) > 0
 
     beat_idx = 0
     beat_count = 0
     current_measure_pos = 0
-    measure_number = 0
+    bar_number = 0
     frames_since_beat = flash_frames + 1
     is_downbeat = False
 
@@ -108,17 +111,16 @@ def render_video_with_beats(
                 current_measure_pos = int(measure_positions[beat_idx])
                 is_downbeat = current_measure_pos == 1
                 if is_downbeat:
-                    measure_number += 1
+                    bar_number += 1
             beat_idx += 1
             frames_since_beat = 0
 
-        # Pick colour: red flash on downbeat, green on other beats
         if frames_since_beat < flash_frames:
             use_color = downbeat_color if is_downbeat else flash_color
         else:
             use_color = font_color
 
-        # --- Draw continuous counter (top) ---
+        # --- Draw continuous counter ---
         if show_continuous:
             frame = _draw_text_with_bg(
                 frame,
@@ -131,9 +133,9 @@ def render_video_with_beats(
                 bg_opacity=bg_opacity,
             )
 
-        # --- Draw measure position (e.g. "Measure 5  |  beat 3 / 4") ---
+        # --- Draw measure position (e.g. "1 / 4") ---
         if show_measure and has_measures and beat_count > 0:
-            measure_text = f"M{measure_number}  |  {current_measure_pos} / {beats_per_measure}"
+            measure_text = f"{current_measure_pos} / {beats_per_measure}"
             frame = _draw_text_with_bg(
                 frame,
                 text=measure_text,
@@ -145,8 +147,22 @@ def render_video_with_beats(
                 bg_opacity=bg_opacity,
             )
 
-        # --- Draw BPM + detected time signature ---
-        ts_label = f"BPM: {bpm:.1f}   {beats_per_measure}/4"
+        # --- Draw bar number (optional) ---
+        if show_bar_number and has_measures and bar_number > 0:
+            bar_text = f"Bar {bar_number}"
+            frame = _draw_text_with_bg(
+                frame,
+                text=bar_text,
+                origin=bar_pos,
+                font_scale=bpm_font_scale,
+                thickness=font_thickness,
+                fg_color=font_color,
+                bg_color=bg_color,
+                bg_opacity=bg_opacity,
+            )
+
+        # --- Draw BPM + time signature ---
+        ts_label = f"BPM: {bpm:.1f}   {beats_per_measure}/4" if has_measures else f"BPM: {bpm:.1f}"
         frame = _draw_text_with_bg(
             frame,
             text=ts_label,

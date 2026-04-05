@@ -1,22 +1,18 @@
 """
-Musicalopment – Flask Web Backend
-=================================
-Mobile-friendly API for beat-counting dance videos.
-
-Endpoints
----------
-GET  /                  → serves the single-page mobile UI
-POST /api/upload        → upload video, run step-1 (beat detection + continuous count)
-POST /api/tap-rerender  → receive tap anchor, detect meter, re-render with 1-2-3-4
-GET  /api/video/<name>  → serve processed videos
+Musicalopment – Flask Web Backend (simplified)
+===============================================
+Step 1: Upload → detect BPM + beat positions → render continuous-count video
+Step 2: User picks meter (3/4, 4/4, 5/4) + taps the "ONE" →
+        pure math to assign measure positions → re-render with 1-2-3-4
 """
 
 from __future__ import annotations
 
+import gc
 import json
 import os
+import subprocess
 import sys
-import time
 import uuid
 from pathlib import Path
 
@@ -29,11 +25,7 @@ import numpy as np
 import yaml
 
 from beat_counter.audio_extractor import extract_audio
-from beat_counter.beat_detector import (
-    detect_beats,
-    detect_meter_from_tap,
-    assign_positions_from_anchor,
-)
+from beat_counter.beat_detector import detect_beats
 from beat_counter.video_overlay import render_video_with_beats
 
 app = Flask(
@@ -47,18 +39,16 @@ OUTPUT_DIR = ROOT / "web" / "processed"
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024  # 500 MB
+app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
 CONFIG_PATH = ROOT / "config.yaml"
+
+_jobs: dict[str, dict] = {}
 
 
 def _load_config() -> dict:
     with open(CONFIG_PATH) as f:
         return yaml.safe_load(f)
-
-
-# In-memory store for job results (keyed by job_id)
-_jobs: dict[str, dict] = {}
 
 
 # ------------------------------------------------------------------
@@ -73,9 +63,8 @@ def index():
 @app.route("/api/upload", methods=["POST"])
 def upload_and_process():
     """
-    Step 1: Upload video → extract audio → detect beats → render video
-    with continuous counting + BPM.  Returns job metadata + beat_times
-    so the frontend can do the tap interaction.
+    Step 1: Upload video → detect beats + BPM → render video with
+    continuous counting only.  Returns beat_times so step 2 is pure math.
     """
     if "video" not in request.files:
         return jsonify(error="No video file in request"), 400
@@ -95,10 +84,8 @@ def upload_and_process():
     codec = cfg["output_video"].get("codec", "mp4v")
 
     try:
-        # Extract audio
         wav_path = extract_audio(input_path, sample_rate=bd["audio_sample_rate"])
 
-        # Detect beats (continuous, no meter yet)
         info = detect_beats(
             wav_path,
             sr=bd["audio_sample_rate"],
@@ -106,10 +93,10 @@ def upload_and_process():
             calibration_seconds=bd["calibration_seconds"],
             bpm_min=bd["bpm_min"],
             bpm_max=bd["bpm_max"],
-            time_signature="auto",
+            time_signature="4",  # doesn't matter, we only use beat_times + bpm
         )
 
-        # Render step-1 video (continuous count + BPM only)
+        # Render step-1 video: continuous count + BPM only
         step1_name = f"{job_id}_step1.mp4"
         step1_path = OUTPUT_DIR / step1_name
         ov_step1 = {**ov, "show_measure_count": False, "show_continuous_count": True}
@@ -117,27 +104,20 @@ def upload_and_process():
         render_video_with_beats(
             input_path, step1_path, info.beat_times, info.bpm,
             ov_step1, codec,
-            measure_positions=info.measure_positions,
-            beats_per_measure=info.beats_per_measure,
         )
-
-        # Mux audio back into step-1 video
         _mux_audio(input_path, step1_path)
 
-        # Clean up wav
         try:
             os.unlink(wav_path)
         except OSError:
             pass
+        gc.collect()
 
         _jobs[job_id] = {
             "input_path": str(input_path),
             "beat_times": [float(t) for t in info.beat_times],
-            "beat_strengths": [float(s) for s in info.beat_strengths],
             "bpm": float(info.bpm),
             "duration": float(info.duration),
-            "auto_meter": int(info.beats_per_measure),
-            "auto_confidence": float(info.meter_confidence),
             "step1_video": step1_name,
         }
 
@@ -147,8 +127,6 @@ def upload_and_process():
             total_beats=len(info.beat_times),
             duration=round(float(info.duration), 1),
             beat_times=[float(t) for t in info.beat_times],
-            auto_meter=int(info.beats_per_measure),
-            auto_confidence=round(float(info.meter_confidence), 2),
             step1_video=f"/api/video/{step1_name}",
         )
 
@@ -156,12 +134,12 @@ def upload_and_process():
         return jsonify(error=str(e)), 500
 
 
-@app.route("/api/tap-rerender", methods=["POST"])
-def tap_rerender():
+@app.route("/api/rerender", methods=["POST"])
+def rerender():
     """
-    Step 2: User tapped the "one" at a given timestamp.
-    Detect meter from that anchor point, then re-render the full video
-    with proper 1-2-3-4 counting.
+    Step 2: User chose meter + tapped the "ONE".
+    Pure math: snap tap to nearest beat, assign 1-2-3-4 cyclically,
+    then re-render the video overlay.
     """
     data = request.get_json()
     if not data:
@@ -169,7 +147,8 @@ def tap_rerender():
 
     job_id = data.get("job_id")
     tap_time = data.get("tap_time")
-    analysis_window = data.get("analysis_window", 10.0)
+    meter = int(data.get("meter", 4))
+    show_bars = bool(data.get("show_bars", False))
 
     if not job_id or tap_time is None:
         return jsonify(error="Missing job_id or tap_time"), 400
@@ -179,7 +158,6 @@ def tap_rerender():
         return jsonify(error="Job not found — upload a video first"), 404
 
     beat_times = np.array(job["beat_times"])
-    beat_strengths = np.array(job["beat_strengths"])
     bpm = job["bpm"]
     input_path = Path(job["input_path"])
 
@@ -187,37 +165,43 @@ def tap_rerender():
     ov = cfg["overlay"]
     codec = cfg["output_video"].get("codec", "mp4v")
 
-    # Detect meter using the tap anchor
-    meter, anchor_idx, confidence = detect_meter_from_tap(
-        beat_times, beat_strengths, float(tap_time),
-        analysis_window=float(analysis_window),
-        candidates=[3, 4, 5],
-    )
+    # Snap tap to nearest beat
+    anchor_idx = int(np.argmin(np.abs(beat_times - float(tap_time))))
 
-    # Assign measure positions locked to the anchor
-    positions, downbeat_indices = assign_positions_from_anchor(
-        len(beat_times), anchor_idx, meter
-    )
+    # Pure math: assign 1-based positions cyclically from the anchor
+    n = len(beat_times)
+    positions = np.zeros(n, dtype=int)
+    for i in range(n):
+        positions[i] = ((i - anchor_idx) % meter) + 1
 
-    # Render final video with full measure counting
+    # Render final video
     final_name = f"{job_id}_final.mp4"
     final_path = OUTPUT_DIR / final_name
 
+    ov_final = {
+        **ov,
+        "show_continuous_count": True,
+        "show_measure_count": True,
+        "show_bar_number": show_bars,
+    }
+
     render_video_with_beats(
-        input_path, final_path, beat_times, bpm, ov, codec,
+        input_path, final_path, beat_times, bpm, ov_final, codec,
         measure_positions=positions,
         beats_per_measure=meter,
+        bar_start_idx=anchor_idx if show_bars else None,
     )
-
     _mux_audio(input_path, final_path)
+    gc.collect()
+
+    total_bars = int(np.sum(positions == 1))
 
     return jsonify(
         job_id=job_id,
-        detected_meter=meter,
-        anchor_beat_index=int(anchor_idx),
+        meter=meter,
         anchor_beat_time=round(float(beat_times[anchor_idx]), 3),
-        confidence=round(confidence, 2),
-        total_measures=int(len(downbeat_indices)),
+        total_bars=total_bars,
+        show_bars=show_bars,
         final_video=f"/api/video/{final_name}",
     )
 
@@ -227,12 +211,7 @@ def serve_video(filename):
     return send_from_directory(str(OUTPUT_DIR), filename)
 
 
-# ------------------------------------------------------------------
-#  Audio mux helper
-# ------------------------------------------------------------------
-
 def _mux_audio(original: Path, overlay: Path) -> None:
-    import subprocess
     tmp = overlay.with_suffix(".tmp" + overlay.suffix)
     cmd = [
         "ffmpeg", "-y",
@@ -250,4 +229,5 @@ def _mux_audio(original: Path, overlay: Path) -> None:
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, debug=False)

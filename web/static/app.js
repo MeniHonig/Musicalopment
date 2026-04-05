@@ -1,12 +1,10 @@
 /* ===================================================
-   Musicalopment – Frontend Logic
-   NO axios. Pure native fetch().
+   Musicalopment – Frontend (NO axios, pure fetch)
    =================================================== */
 
 (function () {
   "use strict";
 
-  // --- DOM refs ---
   const $upload      = document.getElementById("section-upload");
   const $tap         = document.getElementById("section-tap");
   const $result      = document.getElementById("section-result");
@@ -20,27 +18,25 @@
 
   const $statBpm     = document.getElementById("stat-bpm");
   const $statBeats   = document.getElementById("stat-beats");
-  const $statMeter   = document.getElementById("stat-meter");
+  const $statDur     = document.getElementById("stat-dur");
 
   const $video       = document.getElementById("video-player");
   const $btnTap      = document.getElementById("btn-tap");
   const $tapSub      = document.getElementById("tap-sub");
-  const $analysisWin = document.getElementById("analysis-window");
   const $tapStatus   = document.getElementById("tap-status");
   const $tapStatusTxt = document.getElementById("tap-status-text");
+  const $toggleBars  = document.getElementById("toggle-bars");
 
   const $resMeter    = document.getElementById("res-meter");
-  const $resMeasures = document.getElementById("res-measures");
-  const $resConf     = document.getElementById("res-conf");
+  const $resBars     = document.getElementById("res-bars");
   const $resultVideo = document.getElementById("result-player");
   const $downloadLink = document.getElementById("download-link");
   const $btnRestart  = document.getElementById("btn-restart");
 
-  // --- State ---
   let jobId = null;
   let beatTimes = [];
+  let selectedMeter = 4;
 
-  // --- Helpers ---
   function show(el) { el.classList.remove("hidden"); }
   function hide(el) { el.classList.add("hidden"); }
 
@@ -50,8 +46,17 @@
     section.scrollIntoView({ behavior: "smooth", block: "start" });
   }
 
+  // --- Meter button selection ---
+  document.querySelectorAll(".meter-btn").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".meter-btn").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      selectedMeter = parseInt(btn.dataset.meter, 10);
+    });
+  });
+
   // =========================================================
-  //  STEP 1 – Upload & Process
+  //  STEP 1 – Upload
   // =========================================================
 
   $uploadArea.addEventListener("click", () => $fileInput.click());
@@ -62,8 +67,7 @@
     uploadVideo(file);
   });
 
-  async function uploadVideo(file) {
-    // Show progress
+  function uploadVideo(file) {
     show($progress);
     hide($processingMsg);
     $progressFill.style.width = "0%";
@@ -72,18 +76,16 @@
     const formData = new FormData();
     formData.append("video", file);
 
-    // Use XMLHttpRequest for upload progress (fetch doesn't support it)
     const xhr = new XMLHttpRequest();
+    let serverResponded = false;
 
     xhr.upload.addEventListener("progress", (e) => {
       if (e.lengthComputable) {
         const pct = Math.round((e.loaded / e.total) * 100);
         $progressFill.style.width = pct + "%";
-        $progressText.textContent = `Uploading… ${pct}%`;
+        $progressText.textContent = "Uploading… " + pct + "%";
       }
     });
-
-    let serverResponded = false;
 
     xhr.addEventListener("load", () => {
       serverResponded = true;
@@ -91,8 +93,7 @@
       hide($processingMsg);
 
       if (xhr.status >= 200 && xhr.status < 300) {
-        const data = JSON.parse(xhr.responseText);
-        handleStep1Result(data);
+        handleStep1Result(JSON.parse(xhr.responseText));
       } else {
         let msg = "Upload failed";
         try { msg = JSON.parse(xhr.responseText).error || msg; } catch (_) {}
@@ -123,23 +124,18 @@
   }
 
   function handleStep1Result(data) {
-    hide($processingMsg);
-
     jobId = data.job_id;
     beatTimes = data.beat_times || [];
 
-    // Fill stats
     $statBpm.textContent = data.bpm;
     $statBeats.textContent = data.total_beats;
-    $statMeter.textContent = data.auto_meter + "/4";
+    $statDur.textContent = data.duration + "s";
 
-    // Load step-1 video
     $video.src = data.step1_video;
     $video.load();
 
     showSection($tap);
 
-    // Enable tap button once video starts playing
     $btnTap.disabled = true;
     $tapSub.textContent = "play video first";
 
@@ -151,15 +147,15 @@
   }
 
   // =========================================================
-  //  STEP 2 – Tap the ONE & Re-render
+  //  STEP 2 – Tap the ONE → rerender (pure math + overlay)
   // =========================================================
 
   $btnTap.addEventListener("click", () => {
     if ($video.paused || !jobId) return;
 
     const tapTime = $video.currentTime;
-    const nearestBeat = findNearestBeat(tapTime);
-    $tapSub.textContent = `Tapped at ${tapTime.toFixed(2)}s → beat at ${nearestBeat.toFixed(2)}s`;
+    const nearest = findNearestBeat(tapTime);
+    $tapSub.textContent = "Tapped at " + tapTime.toFixed(2) + "s → beat at " + nearest.toFixed(2) + "s";
     $btnTap.disabled = true;
 
     rerender(tapTime);
@@ -177,24 +173,23 @@
 
   async function rerender(tapTime) {
     show($tapStatus);
-    $tapStatusTxt.textContent = "Detecting meter & re-rendering…";
-
-    const analysisWindow = parseFloat($analysisWin.value) || 10;
+    $tapStatusTxt.textContent = "Rendering " + selectedMeter + "/4 counting…";
 
     try {
-      const resp = await fetch("/api/tap-rerender", {
+      const resp = await fetch("/api/rerender", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           job_id: jobId,
           tap_time: tapTime,
-          analysis_window: analysisWindow,
+          meter: selectedMeter,
+          show_bars: $toggleBars.checked,
         }),
       });
 
       if (!resp.ok) {
         const err = await resp.json();
-        throw new Error(err.error || "Re-render failed");
+        throw new Error(err.error || "Render failed");
       }
 
       const data = await resp.json();
@@ -209,9 +204,8 @@
   }
 
   function handleStep2Result(data) {
-    $resMeter.textContent = data.detected_meter + "/4";
-    $resMeasures.textContent = data.total_measures;
-    $resConf.textContent = data.confidence.toFixed(2);
+    $resMeter.textContent = data.meter + "/4";
+    $resBars.textContent = data.total_bars;
 
     $resultVideo.src = data.final_video;
     $resultVideo.load();

@@ -11,7 +11,6 @@
 <body>
   <div id="app">
 
-    <!-- HEADER -->
     <header>
       <h1>Musicalopment</h1>
       <p class="subtitle">Beat Counter for Dance Videos</p>
@@ -40,42 +39,50 @@
       </div>
     </section>
 
-    <!-- STEP 2: REVIEW + TAP -->
+    <!-- STEP 2: REVIEW + CHOOSE METER + TAP -->
     <section id="section-tap" class="card hidden">
       <div class="step-badge">2</div>
-      <h2>Review & Tap the "ONE"</h2>
+      <h2>Set Rhythm & Tap the "ONE"</h2>
 
       <div class="stats-row">
         <div class="stat"><span class="stat-val" id="stat-bpm">—</span><span class="stat-label">BPM</span></div>
         <div class="stat"><span class="stat-val" id="stat-beats">—</span><span class="stat-label">Beats</span></div>
-        <div class="stat"><span class="stat-val" id="stat-meter">—</span><span class="stat-label">Auto Meter</span></div>
+        <div class="stat"><span class="stat-val" id="stat-dur">—</span><span class="stat-label">Duration</span></div>
       </div>
 
       <div class="video-container">
         <video id="video-player" playsinline controls></video>
       </div>
 
-      <p class="hint">Play the video. When you feel the <strong>"ONE"</strong> beat, tap the button below.</p>
+      <!-- Meter selector -->
+      <div class="setting-group">
+        <label>Time signature:</label>
+        <div class="meter-buttons" id="meter-buttons">
+          <button class="meter-btn" data-meter="3">3/4</button>
+          <button class="meter-btn active" data-meter="4">4/4</button>
+          <button class="meter-btn" data-meter="5">5/4</button>
+        </div>
+      </div>
+
+      <!-- Bar counting toggle -->
+      <div class="setting-group">
+        <label class="toggle-label">
+          <span>Show bar numbers</span>
+          <input type="checkbox" id="toggle-bars">
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <p class="hint">Play the video. When you feel the <strong>"ONE"</strong>, tap the button.</p>
 
       <button id="btn-tap" class="btn btn-tap" disabled>
         <span class="tap-label">TAP THE ONE</span>
         <span class="tap-sub" id="tap-sub">play video first</span>
       </button>
 
-      <div class="settings-row">
-        <label>Analysis window:
-          <select id="analysis-window">
-            <option value="5">5 sec</option>
-            <option value="10" selected>10 sec</option>
-            <option value="15">15 sec</option>
-            <option value="20">20 sec</option>
-          </select>
-        </label>
-      </div>
-
       <div id="tap-status" class="status-msg hidden">
         <div class="spinner"></div>
-        <span id="tap-status-text">Detecting meter & re-rendering…</span>
+        <span id="tap-status-text">Rendering…</span>
       </div>
     </section>
 
@@ -86,8 +93,7 @@
 
       <div class="stats-row">
         <div class="stat"><span class="stat-val" id="res-meter">—</span><span class="stat-label">Meter</span></div>
-        <div class="stat"><span class="stat-val" id="res-measures">—</span><span class="stat-label">Measures</span></div>
-        <div class="stat"><span class="stat-val" id="res-conf">—</span><span class="stat-label">Confidence</span></div>
+        <div class="stat"><span class="stat-val" id="res-bars">—</span><span class="stat-label">Bars</span></div>
       </div>
 
       <div class="video-container">
@@ -95,7 +101,6 @@
       </div>
 
       <a id="download-link" class="btn btn-download" download>Download Video</a>
-
       <button id="btn-restart" class="btn btn-secondary">Start Over</button>
     </section>
 
