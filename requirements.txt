@@ -1,0 +1,38 @@
+# =============================================================
+# Musicalopment – pinned dependencies
+# =============================================================
+# Direct dependencies (what we import)
+librosa==0.11.0
+opencv-python-headless==4.13.0.92
+ffmpeg-python==0.2.0
+PyYAML==6.0.3
+numpy==2.2.6
+soundfile==0.13.1
+
+flask==3.1.3
+gunicorn==23.0.0
+
+# Transitive (pinned for reproducibility)
+audioread==3.1.0
+certifi==2026.2.25
+cffi==2.0.0
+charset-normalizer==3.4.7
+decorator==5.2.1
+future==1.0.0
+idna==3.11
+joblib==1.5.3
+lazy-loader==0.5
+llvmlite==0.47.0
+msgpack==1.1.2
+numba==0.65.0
+packaging==26.0
+platformdirs==4.9.4
+pooch==1.9.0
+pycparser==3.0
+requests==2.33.1
+scikit-learn==1.7.2
+scipy==1.15.3
+soxr==1.0.0
+threadpoolctl==3.6.0
+typing_extensions==4.15.0
+urllib3==2.6.3

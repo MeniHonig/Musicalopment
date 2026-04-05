@@ -1,0 +1,83 @@
+# =============================================================
+# Musicalopment - Beat Counter Configuration
+# =============================================================
+
+# --- Audio / Beat Detection ---
+beat_detection:
+  # Duration (seconds) at the start of the video used to calibrate BPM.
+  calibration_seconds: 5.0
+
+  # Sample rate used when loading audio for analysis (Hz).
+  audio_sample_rate: 22050
+
+  # librosa onset-strength hop length (samples).
+  # Smaller = finer time resolution but slower.
+  hop_length: 512
+
+  # If true, re-estimate BPM in a sliding window after calibration.
+  # Future feature – leave false for now.
+  adaptive_bpm: false
+
+  # Minimum / maximum plausible BPM (filters out false detections).
+  bpm_min: 60
+  bpm_max: 200
+
+  # Time signature detection.
+  #   "auto" – detect automatically (analyses accent patterns for 3/4 vs 4/4)
+  #   "4/4"  – force common time (1-2-3-4)
+  #   "3/4"  – force waltz time  (1-2-3)
+  #   "6/8"  – force 6-beat grouping
+  #   You can also write just the number: "3", "4", "6"
+  time_signature: "auto"
+
+# --- Video Overlay ---
+overlay:
+  # Font scale for the continuous beat counter number.
+  counter_font_scale: 2.0
+
+  # Font scale for the measure position line (e.g. "M3 | 2 / 4").
+  measure_font_scale: 1.6
+
+  # Font scale for the BPM + time-signature label.
+  bpm_font_scale: 1.2
+
+  # Font thickness (pixels).
+  font_thickness: 3
+
+  # Font color as [B, G, R] (OpenCV uses BGR).
+  font_color: [0, 255, 255]  # yellow
+
+  # Background rectangle behind text for readability (semi-transparent).
+  text_bg_color: [0, 0, 0]   # black
+  text_bg_opacity: 0.55
+
+  # Position offsets from top-left corner (pixels).
+  counter_x: 30
+  counter_y: 70
+
+  measure_x: 30
+  measure_y: 140
+
+  bpm_x: 30
+  bpm_y: 200
+
+  # How many frames the counter "flash" highlight lasts on each new beat.
+  flash_frames: 3
+  flash_color: [0, 255, 0]     # green flash on regular beats
+  downbeat_color: [0, 0, 255]  # red flash on the "1" (downbeat)
+
+  # Toggle which overlays to show.
+  show_continuous_count: true   # running total (1, 2, 3, …)
+  show_measure_count: true      # musical counting (M1 | 3/4)
+
+# --- I/O Paths ---
+paths:
+  input_dir: "input"
+  output_dir: "output"
+
+# --- Output Video ---
+output_video:
+  # Codec fourcc code.  Use "mp4v" for .mp4 or "XVID" for .avi
+  codec: "mp4v"
+  # Output file suffix added before extension, e.g. dance_beat_counted.mp4
+  suffix: "_beat_counted"

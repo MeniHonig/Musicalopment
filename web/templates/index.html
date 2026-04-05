@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <title>Musicalopment</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div id="app">
+
+    <!-- HEADER -->
+    <header>
+      <h1>Musicalopment</h1>
+      <p class="subtitle">Beat Counter for Dance Videos</p>
+    </header>
+
+    <!-- STEP 1: UPLOAD -->
+    <section id="section-upload" class="card active">
+      <div class="step-badge">1</div>
+      <h2>Upload Video</h2>
+      <p class="hint">Select a dance video from your library</p>
+
+      <label class="upload-area" id="upload-area">
+        <input type="file" id="file-input" accept="video/*" hidden>
+        <div class="upload-icon">&#9654;</div>
+        <span>Tap to choose video</span>
+      </label>
+
+      <div id="upload-progress" class="progress-bar hidden">
+        <div class="progress-fill" id="progress-fill"></div>
+        <span class="progress-text" id="progress-text">Uploading…</span>
+      </div>
+
+      <div id="processing-msg" class="status-msg hidden">
+        <div class="spinner"></div>
+        <span>Analysing beats & BPM…</span>
+      </div>
+    </section>
+
+    <!-- STEP 2: REVIEW + TAP -->
+    <section id="section-tap" class="card hidden">
+      <div class="step-badge">2</div>
+      <h2>Review & Tap the "ONE"</h2>
+
+      <div class="stats-row">
+        <div class="stat"><span class="stat-val" id="stat-bpm">—</span><span class="stat-label">BPM</span></div>
+        <div class="stat"><span class="stat-val" id="stat-beats">—</span><span class="stat-label">Beats</span></div>
+        <div class="stat"><span class="stat-val" id="stat-meter">—</span><span class="stat-label">Auto Meter</span></div>
+      </div>
+
+      <div class="video-container">
+        <video id="video-player" playsinline controls></video>
+      </div>
+
+      <p class="hint">Play the video. When you feel the <strong>"ONE"</strong> beat, tap the button below.</p>
+
+      <button id="btn-tap" class="btn btn-tap" disabled>
+        <span class="tap-label">TAP THE ONE</span>
+        <span class="tap-sub" id="tap-sub">play video first</span>
+      </button>
+
+      <div class="settings-row">
+        <label>Analysis window:
+          <select id="analysis-window">
+            <option value="5">5 sec</option>
+            <option value="10" selected>10 sec</option>
+            <option value="15">15 sec</option>
+            <option value="20">20 sec</option>
+          </select>
+        </label>
+      </div>
+
+      <div id="tap-status" class="status-msg hidden">
+        <div class="spinner"></div>
+        <span id="tap-status-text">Detecting meter & re-rendering…</span>
+      </div>
+    </section>
+
+    <!-- STEP 3: RESULT -->
+    <section id="section-result" class="card hidden">
+      <div class="step-badge">3</div>
+      <h2>Result</h2>
+
+      <div class="stats-row">
+        <div class="stat"><span class="stat-val" id="res-meter">—</span><span class="stat-label">Meter</span></div>
+        <div class="stat"><span class="stat-val" id="res-measures">—</span><span class="stat-label">Measures</span></div>
+        <div class="stat"><span class="stat-val" id="res-conf">—</span><span class="stat-label">Confidence</span></div>
+      </div>
+
+      <div class="video-container">
+        <video id="result-player" playsinline controls></video>
+      </div>
+
+      <a id="download-link" class="btn btn-download" download>Download Video</a>
+
+      <button id="btn-restart" class="btn btn-secondary">Start Over</button>
+    </section>
+
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
