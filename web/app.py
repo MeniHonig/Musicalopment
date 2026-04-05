@@ -11,6 +11,7 @@ import gc
 import os
 import subprocess
 import sys
+import threading
 import uuid
 from pathlib import Path
 
@@ -42,6 +43,7 @@ app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 CONFIG_PATH = ROOT / "config.yaml"
 
 _jobs: dict[str, dict] = {}
+_render_progress: dict[str, dict] = {}  # job_id → {pct, status, result}
 
 
 def _load_config() -> dict:
@@ -119,8 +121,8 @@ def upload_and_process():
 @app.route("/api/rerender", methods=["POST"])
 def rerender():
     """
-    Step 2: User chose meter + tapped the ONE.
-    Snap tap to nearest beat → assign 1-2-3-4 → render overlay.
+    Step 2: Start background render. Returns immediately.
+    Frontend polls /api/progress/<job_id> for updates.
     """
     data = request.get_json()
     if not data:
@@ -138,49 +140,85 @@ def rerender():
     if not job:
         return jsonify(error="Job not found — upload a video first"), 404
 
-    beat_times = np.array(job["beat_times"])
-    bpm = job["bpm"]
-    input_path = Path(job["input_path"])
+    _render_progress[job_id] = {"pct": 0, "status": "starting", "result": None}
 
-    cfg = _load_config()
-    ov = cfg["overlay"]
-    codec = cfg["output_video"].get("codec", "mp4v")
-
-    anchor_idx = int(np.argmin(np.abs(beat_times - float(tap_time))))
-
-    n = len(beat_times)
-    positions = np.zeros(n, dtype=int)
-    for i in range(n):
-        positions[i] = ((i - anchor_idx) % meter) + 1
-
-    final_name = f"{job_id}_final.mp4"
-    final_path = OUTPUT_DIR / final_name
-
-    ov_final = {
-        **ov,
-        "show_continuous_count": True,
-        "show_measure_count": True,
-        "show_bar_number": show_bars,
-    }
-
-    render_video_with_beats(
-        input_path, final_path, beat_times, bpm, ov_final, codec,
-        measure_positions=positions,
-        beats_per_measure=meter,
+    thread = threading.Thread(
+        target=_do_render,
+        args=(job_id, job, float(tap_time), meter, show_bars),
+        daemon=True,
     )
-    _mux_audio(input_path, final_path)
-    gc.collect()
+    thread.start()
 
-    total_bars = int(np.sum(positions == 1))
+    return jsonify(job_id=job_id, status="rendering")
 
-    return jsonify(
-        job_id=job_id,
-        meter=meter,
-        anchor_beat_time=round(float(beat_times[anchor_idx]), 3),
-        total_bars=total_bars,
-        show_bars=show_bars,
-        final_video=f"/api/video/{final_name}",
-    )
+
+def _do_render(job_id, job, tap_time, meter, show_bars):
+    """Background render task."""
+    try:
+        beat_times = np.array(job["beat_times"])
+        bpm = job["bpm"]
+        input_path = Path(job["input_path"])
+
+        cfg = _load_config()
+        ov = cfg["overlay"]
+        codec = cfg["output_video"].get("codec", "mp4v")
+
+        anchor_idx = int(np.argmin(np.abs(beat_times - tap_time)))
+
+        n = len(beat_times)
+        positions = np.zeros(n, dtype=int)
+        for i in range(n):
+            positions[i] = ((i - anchor_idx) % meter) + 1
+
+        final_name = f"{job_id}_final.mp4"
+        final_path = OUTPUT_DIR / final_name
+
+        ov_final = {
+            **ov,
+            "show_continuous_count": True,
+            "show_measure_count": True,
+            "show_bar_number": show_bars,
+        }
+
+        def on_progress(pct):
+            _render_progress[job_id] = {"pct": pct, "status": "rendering", "result": None}
+
+        render_video_with_beats(
+            input_path, final_path, beat_times, bpm, ov_final, codec,
+            measure_positions=positions,
+            beats_per_measure=meter,
+            progress_callback=on_progress,
+        )
+
+        on_progress(95)
+        _mux_audio(input_path, final_path)
+        gc.collect()
+
+        total_bars = int(np.sum(positions == 1))
+
+        _render_progress[job_id] = {
+            "pct": 100,
+            "status": "done",
+            "result": {
+                "job_id": job_id,
+                "meter": meter,
+                "anchor_beat_time": round(float(beat_times[anchor_idx]), 3),
+                "total_bars": total_bars,
+                "show_bars": show_bars,
+                "final_video": f"/api/video/{final_name}",
+            },
+        }
+    except Exception as e:
+        _render_progress[job_id] = {"pct": 0, "status": "error", "error": str(e), "result": None}
+
+
+@app.route("/api/progress/<job_id>")
+def get_progress(job_id):
+    """Poll this to get render progress (0-100) and final result."""
+    prog = _render_progress.get(job_id)
+    if not prog:
+        return jsonify(pct=0, status="unknown"), 404
+    return jsonify(**prog)
 
 
 @app.route("/api/uploaded/<filename>")

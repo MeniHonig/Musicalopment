@@ -23,8 +23,9 @@
   const $video       = document.getElementById("video-player");
   const $btnTap      = document.getElementById("btn-tap");
   const $tapSub      = document.getElementById("tap-sub");
-  const $tapStatus   = document.getElementById("tap-status");
-  const $tapStatusTxt = document.getElementById("tap-status-text");
+  const $renderProg     = document.getElementById("render-progress");
+  const $renderProgFill = document.getElementById("render-progress-fill");
+  const $renderProgText = document.getElementById("render-progress-text");
   const $toggleBars  = document.getElementById("toggle-bars");
 
   const $resMeter    = document.getElementById("res-meter");
@@ -180,8 +181,9 @@
   }
 
   async function rerender(tapTime) {
-    show($tapStatus);
-    $tapStatusTxt.textContent = "Rendering " + selectedMeter + "/4 counting…";
+    show($renderProg);
+    $renderProgFill.style.width = "0%";
+    $renderProgText.textContent = "Rendering " + selectedMeter + "/4 counting… 0%";
 
     try {
       const resp = await fetch("/api/rerender", {
@@ -200,15 +202,39 @@
         throw new Error(err.error || "Render failed");
       }
 
-      const data = await resp.json();
-      handleStep2Result(data);
+      pollProgress(jobId);
 
     } catch (e) {
+      hide($renderProg);
       alert(e.message);
       $btnTap.disabled = false;
-    } finally {
-      hide($tapStatus);
     }
+  }
+
+  function pollProgress(id) {
+    const iv = setInterval(async () => {
+      try {
+        const r = await fetch("/api/progress/" + id);
+        const d = await r.json();
+        const pct = d.pct || 0;
+
+        $renderProgFill.style.width = pct + "%";
+        $renderProgText.textContent = "Rendering… " + pct + "%";
+
+        if (d.status === "done") {
+          clearInterval(iv);
+          hide($renderProg);
+          handleStep2Result(d.result);
+        } else if (d.status === "error") {
+          clearInterval(iv);
+          hide($renderProg);
+          alert("Render error: " + (d.error || "unknown"));
+          $btnTap.disabled = false;
+        }
+      } catch (_) {
+        // network hiccup — keep polling
+      }
+    }, 1500);
   }
 
   function handleStep2Result(data) {
@@ -238,7 +264,7 @@
     $tapSub.textContent = "play video first";
     hide($progress);
     hide($processingMsg);
-    hide($tapStatus);
+    hide($renderProg);
     showSection($upload);
   });
 

@@ -47,13 +47,13 @@ def render_video_with_beats(
     measure_positions: np.ndarray | None = None,
     beats_per_measure: int = 4,
     bar_start_idx: int | None = None,
+    progress_callback=None,
 ) -> Path:
     """
     Read *video_path* frame-by-frame, overlay beat counter + BPM,
     write to *output_path*.
 
-    When *measure_positions* is provided, the overlay shows musical counting
-    (e.g. "1  2  3  4") instead of (or alongside) a running total.
+    progress_callback(pct: int) is called periodically with 0-100.
     """
     video_path = Path(video_path)
     output_path = Path(output_path)
@@ -66,6 +66,7 @@ def render_video_with_beats(
     fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT)) or 1
     fourcc = cv2.VideoWriter_fourcc(*codec)
     writer = cv2.VideoWriter(str(output_path), fourcc, fps, (width, height))
 
@@ -177,6 +178,12 @@ def render_video_with_beats(
         writer.write(frame)
         frame_num += 1
         frames_since_beat += 1
+
+        if progress_callback and frame_num % 30 == 0:
+            progress_callback(min(99, int(100 * frame_num / total_frames)))
+
+    if progress_callback:
+        progress_callback(100)
 
     cap.release()
     writer.release()
