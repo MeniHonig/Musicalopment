@@ -198,8 +198,9 @@
       });
 
       if (!resp.ok) {
-        const err = await resp.json();
-        throw new Error(err.error || "Render failed");
+        let msg = "Render failed (status " + resp.status + ")";
+        try { msg = (await resp.json()).error || msg; } catch (_) {}
+        throw new Error(msg);
       }
 
       pollProgress(jobId);
